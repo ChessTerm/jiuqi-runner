@@ -4,14 +4,13 @@ import json
 from math import floor
 from os import environ
 from random import randint
+from subprocess import Popen, PIPE
 from time import time
 from typing import List, Optional
 
 import requests
 import stomper
 import websocket
-
-from subprocess import Popen, PIPE
 
 API_URL = environ.get('API_URL') or "https://chess.cslab.top/api"
 JAR_PATH = environ.get('JAR_PATH') or "./flamechess.jar"
