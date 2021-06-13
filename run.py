@@ -6,7 +6,7 @@ from os import environ
 from random import randint
 from subprocess import Popen, PIPE
 from time import time
-from typing import List, Optional
+from typing import List
 
 import requests
 import stomper
@@ -19,8 +19,6 @@ if API_URL:
     while API_URL[-1] == '/':
         API_URL = API_URL[:-1]
 WS_URL = f'ws{API_URL[4:]}/ws/no_sockjs'
-
-websocket.enableTrace(True)
 
 
 def generate_sub_id():
@@ -40,7 +38,7 @@ def state2z(state: List[List[int]]) -> str:
 class Client(websocket.WebSocketApp):
     board_id: int
 
-    last_state: Optional[List[List[int]]] = None
+    finished_at = 0
 
     def __init__(self):
         super().__init__(WS_URL,
@@ -52,7 +50,7 @@ class Client(websocket.WebSocketApp):
     def subscribe(self):
         response = requests.get(f'{API_URL}/boards/find?game=1&user=10170')
         self.board_id = response.json()['data']['id']
-        sub = stomper.subscribe(f"/topic/boards/{self.board_id}/sync", generate_sub_id(), ack='auto')
+        sub = stomper.subscribe(f'/topic/boards/{self.board_id}/next_step', generate_sub_id(), ack='auto')
         self.send(sub)
 
     def update_board(self, state: List[List[int]]):
@@ -73,26 +71,30 @@ class Client(websocket.WebSocketApp):
 
     @staticmethod
     def on_message(ws: 'Client', message):
+        time_now = time()
+        if ws.finished_at + 1 >= time_now:
+            # Force the program to wait 1s before processing the next request
+            # in order to prevent abuse caused by frequent submission by the user.
+            return
         decoded_message = stomper.unpack_frame(message)
         if decoded_message['cmd'] == 'CONNECTED':
             ws.subscribe()
         elif decoded_message['cmd'] == 'MESSAGE':
-            state: List[List[int]] = json.loads(decoded_message['body'])
-            if not ws.last_state or json.dumps(state) != json.dumps(ws.last_state):
-                ws.last_state = state
-                z = state2z(state)
-                print(z)
-                ws.p.stdin.write(z + "\n")  # write it
-                ws.p.stdin.flush()
-                ws.p.stdin.write("0\n")  # stage
-                ws.p.stdin.flush()
-                respond = ws.p.stdout.readline().strip()
-                ws.p.stdout.readline()  # read "Input State:"
-                print("respond:", respond)
-                ws.last_state = z2state(respond)
-                ws.update_board(z2state(respond))
-                print("updated")
-                # Then use `ws.update_board(new_state)` to update the board.
+            decoded_message_body = json.loads(decoded_message['body'])
+            stage = 1 if decoded_message_body['stage'] == 'PLAY' else 0
+            state = decoded_message_body['state']
+            state_z = state2z(state)
+            print("received:", state_z)
+            ws.p.stdin.write(state_z + '\n')  # write it
+            ws.p.stdin.flush()
+            ws.p.stdin.write(f'{stage}\n')  # stage
+            ws.p.stdin.flush()
+            respond = ws.p.stdout.readline().strip()
+            ws.p.stdout.readline()  # read "Input State:"
+            print("respond:", respond)
+            ws.last_state = z2state(respond)
+            ws.update_board(z2state(respond))
+            ws.finished_at = time()
 
     @staticmethod
     def on_error(_ws, error):
