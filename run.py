@@ -83,12 +83,12 @@ class Client(websocket.WebSocketApp):
                 ws.last_state = state
                 z = state2z(state)
                 print(z)
-                ws.p.stdin.write(z+"\n")  # write it
+                ws.p.stdin.write(z + "\n")  # write it
                 ws.p.stdin.flush()
-                ws.p.stdin.write("0\n")     # stage
+                ws.p.stdin.write("0\n")  # stage
                 ws.p.stdin.flush()
                 respond = ws.p.stdout.readline().strip()
-                ws.p.stdout.readline()    # read "Input State:"
+                ws.p.stdout.readline()  # read "Input State:"
                 print("respond:", respond)
                 ws.last_state = z2state(respond)
                 ws.update_board(z2state(respond))
